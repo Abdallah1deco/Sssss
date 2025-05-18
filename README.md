@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <title>نظام إدارة الكتب وتحليلها بالذكاء الاصطناعي</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: 'Cairo', Arial, sans-serif;
+            background: #f7f7fa;
+            margin: 0;
+            padding: 0;
+            direction: rtl;
+        }
+        header {
+            background: linear-gradient(90deg, #3c8dbc, #00c0ef);
+            color: #fff;
+            padding: 30px 0 20px 0;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(60,140,188,0.1);
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 2.2em;
+        }
+        main {
+            max-width: 900px;
+            margin: 30px auto;
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+            padding: 32px 24px;
+        }
+        .section {
+            margin-bottom: 32px;
+        }
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 10px;
+        }
+        input[type=file] {
+            display: block;
+            margin-bottom: 16px;
+        }
+        button {
+            background: #3c8dbc;
+            color: #fff;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 6px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #367fa9;
+        }
+        .books-list {
+            background: #f2f8fc;
+            border-radius: 8px;
+            padding: 16px;
+            min-height: 50px;
+        }
+        .book-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            color: #3c8dbc;
+        }
+        .book-item:last-child {
+            border-bottom: none;
+        }
+        .ai-section {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 10px;
+        }
+        .ai-title {
+            color: #3c8dbc;
+            margin-bottom: 8px;
+        }
+        .footer {
+            text-align: center;
+            color: #aaa;
+            margin: 40px 0 10px 0;
+            font-size: 0.95em;
+        }
+        #pdf-viewer {
+            width: 100%;
+            height: 500px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+        #ai-results {
+            min-height: 80px;
+        }
+        .ai-question {
+            margin-top: 16px;
+        }
+        .ai-question input {
+            width: 70%;
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 1em;
+        }
+        .ai-question button {
+            padding: 6px 14px;
+            font-size: 1em;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>نظام إدارة الكتب وتحليلها بالذكاء الاصطناعي</h1>
+        <div>ارفع كتابك، خزنه، اطلع عليه، واسأل الذكاء الاصطناعي عن محتواه!</div>
+    </header>
+    <main>
+        <section class="section">
+            <label for="book-upload">رفع الكتاب (PDF فقط):</label>
+            <input type="file" id="book-upload" accept=".pdf">
+            <button onclick="uploadBook()">رفع وتحليل</button>
+        </section>
+        <section class="section">
+            <label>الكتب المخزنة (اضغط على اسم الكتاب لفتحه):</label>
+            <div class="books-list" id="books-list">
+                <span style="color:#aaa;">لم يتم رفع أي كتاب بعد.</span>
+            </div>
+        </section>
+        <section class="section">
+            <label>عرض الكتاب:</label>
+            <iframe id="pdf-viewer"></iframe>
+        </section>
+        <section class="section ai-section">
+            <div class="ai-title">نتائج الذكاء الاصطناعي</div>
+            <div id="ai-results">
+                <span style="color:#aaa;">لم يتم توليد أي ملخص أو إجابة بعد.</span>
+            </div>
+            <div class="ai-question">
+                <input type="text" id="ai-question-input" placeholder="اكتب سؤالك عن محتوى الكتاب هنا...">
+                <button onclick="askAI()">اسأل الذكاء الاصطناعي</button>
+            </div>
+        </section>
+    </main>
+    <div class="footer">
+        &copy; 2025 نظام إدارة الكتب بالذكاء الاصطناعي – تم التطوير بواسطة Perplexity AI
+    </div>
+    <!-- مكتبة PDF.js لعرض ملفات PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.js"></script>
+    <script>
+        // مصفوفة لحفظ الكتب (اسم وملف وبيانات)
+        let books = [];
+        let currentBookIdx = null; // مؤشر الكتاب المعروض
+        let currentBookText = "";  // نص الكتاب الحالي
+
+        function uploadBook() {
+            const input = document.getElementById('book-upload');
+            if (!input.files.length) {
+                alert('يرجى اختيار ملف PDF أولاً.');
+                return;
+            }
+            const file = input.files[0];
+            if (file.type !== "application/pdf") {
+                alert("الرجاء رفع ملف PDF فقط.");
+                return;
+            }
+            // قراءة الملف كبايتات
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                books.push({name: file.name, file, arrayBuffer});
+                renderBooksList();
+                // فتح الكتاب تلقائياً بعد الرفع
+                openBook(books.length-1);
+            };
+            reader.readAsArrayBuffer(file);
+            input.value = '';
+        }
+
+        function renderBooksList() {
+            const listDiv = document.getElementById('books-list');
+            if (books.length === 0) {
+                listDiv.innerHTML = '<span style="color:#aaa;">لم يتم رفع أي كتاب بعد.</span>';
+                return;
+            }
+            listDiv.innerHTML = '';
+            books.forEach((book, idx) => {
+                const div = document.createElement('div');
+                div.className = 'book-item';
+                div.textContent = (idx+1) + '. ' + book.name;
+                div.onclick = () => openBook(idx);
+                listDiv.appendChild(div);
+            });
+        }
+
+        async function openBook(idx) {
+            currentBookIdx = idx;
+            const book = books[idx];
+            // عرض الكتاب داخل iframe باستخدام Blob URL
+            const blob = new Blob([book.arrayBuffer], {type: "application/pdf"});
+            const url = URL.createObjectURL(blob);
+            document.getElementById('pdf-viewer').src = url;
+            document.getElementById('pdf-viewer').style.display = 'block';
+            // استخراج نص الكتاب للذكاء الاصطناعي
+            extractPdfText(book.arrayBuffer);
+        }
+
+        // استخراج نص ملف PDF باستخدام PDF.js
+        async function extractPdfText(arrayBuffer) {
+            currentBookText = "";
+            try {
+                const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+                let text = "";
+                for (let i = 1; i <= Math.min(pdf.numPages, 15); i++) { // نكتفي بأول 15 صفحة للاختصار
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    const pageText = content.items.map(item => item.str).join(' ');
+                    text += pageText + "\n";
+                }
+                currentBookText = text;
+                generateAIResults();
+            } catch (e) {
+                document.getElementById('ai-results').innerHTML = "<span style='color:red;'>تعذر استخراج نص الكتاب.</span>";
+            }
+        }
+
+        // توليد ملخص افتراضي (محلي) للكتاب
+        function generateAIResults() {
+            const aiDiv = document.getElementById('ai-results');
+            if (!currentBookText.trim()) {
+                aiDiv.innerHTML = "<span style='color:#aaa;'>لم يتم استخراج نص الكتاب بعد.</span>";
+                return;
+            }
+            // ملخص بسيط: أول 3 جمل من النص
+            const sentences = currentBookText.replace(/\n/g, ' ').split(/[.!؟]/).filter(s => s.trim().length > 20);
+            let summary = sentences.slice(0,3).join('. ') + ".";
+            if (!summary.trim() || summary.length < 40) summary = "لم يتم العثور على ملخص مناسب.";
+            aiDiv.innerHTML = `
+                <b>ملخص للكتاب:</b>
+                <div style="margin-bottom:10px;">${summary}</div>
+                <b>أسئلة مقترحة:</b>
+                <ul>
+                    <li>ما هي الفكرة الرئيسية للكتاب؟</li>
+                    <li>ما أهم المواضيع التي يناقشها الكتاب؟</li>
+                    <li>كيف يمكن الاستفادة من محتوى الكتاب؟</li>
+                </ul>
+            `;
+        }
+
+        // محاكاة ذكاء اصطناعي: الإجابة على سؤال المستخدم من نص الكتاب
+        function askAI() {
+            const question = document.getElementById('ai-question-input').value.trim();
+            if (!question) {
+                alert("يرجى كتابة سؤال.");
+                return;
+            }
+            if (!currentBookText.trim()) {
+                alert("يرجى فتح كتاب أولاً.");
+                return;
+            }
+            // محاكاة: البحث عن جملة قريبة من السؤال
+            let answer = "";
+            const sentences = currentBookText.split(/[.!؟]/).map(s => s.trim()).filter(s => s.length > 20);
+            // بحث بسيط: إذا تواجدت كلمة من السؤال في جملة من النص
+            const qWords = question.split(' ');
+            for (let s of sentences) {
+                for (let w of qWords) {
+                    if (s.includes(w)) {
+                        answer = s;
+                        break;
+                    }
+                }
+                if (answer) break;
+            }
+            if (!answer) answer = "لم أجد إجابة مباشرة في نص الكتاب. حاول إعادة صياغة السؤال أو استخدم كلمات مفتاحية من محتوى الكتاب.";
+            document.getElementById('ai-results').innerHTML +=
+                `<div style="margin-top:18px; background:#e3f3fd; border-radius:6px; padding:10px;">
+                    <b>سؤالك:</b> ${question}<br>
+                    <b>إجابة الذكاء الاصطناعي:</b> ${answer}
+                </div>`;
+            document.getElementById('ai-question-input').value = "";
+        }
+    </script>
+</body>
+</html>
