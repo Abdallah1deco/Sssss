@@ -87,31 +87,31 @@
             margin: 40px 0 10px 0;
             font-size: 0.95em;
         }
-        #pdf-viewer {
+        #pdf-viewer-container {
             width: 100%;
-            height: 500px;
+            min-height: 600px;
             border: 1px solid #ccc;
             border-radius: 8px;
             margin-top: 10px;
+            background: #eee;
             display: none;
+            text-align: center;
+            position: relative;
         }
-        #ai-results {
-            min-height: 80px;
+        #pdf-canvas {
+            margin: 20px auto;
+            display: block;
+            background: #fff;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }
-        .ai-question {
-            margin-top: 16px;
+        .pdf-controls {
+            margin-top: 10px;
+            margin-bottom: 10px;
+            text-align: center;
         }
-        .ai-question input {
-            width: 70%;
-            padding: 6px;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-            font-size: 1em;
-        }
-        .ai-question button {
-            padding: 6px 14px;
-            font-size: 1em;
-            margin-right: 8px;
+        .pdf-controls button {
+            margin: 0 8px;
         }
     </style>
 </head>
@@ -134,7 +134,14 @@
         </section>
         <section class="section">
             <label>عرض الكتاب:</label>
-            <iframe id="pdf-viewer"></iframe>
+            <div id="pdf-viewer-container">
+                <div class="pdf-controls">
+                    <button onclick="prevPage()">الصفحة السابقة</button>
+                    <span id="page-info">صفحة <span id="current-page">1</span> من <span id="total-pages">1</span></span>
+                    <button onclick="nextPage()">الصفحة التالية</button>
+                </div>
+                <canvas id="pdf-canvas"></canvas>
+            </div>
         </section>
         <section class="section ai-section">
             <div class="ai-title">نتائج الذكاء الاصطناعي</div>
@@ -150,13 +157,15 @@
     <div class="footer">
         &copy; 2025 نظام إدارة الكتب بالذكاء الاصطناعي – تم التطوير بواسطة Perplexity AI
     </div>
-    <!-- مكتبة PDF.js لعرض ملفات PDF -->
+    <!-- مكتبة PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.js"></script>
     <script>
-        // مصفوفة لحفظ الكتب (اسم وملف وبيانات)
         let books = [];
-        let currentBookIdx = null; // مؤشر الكتاب المعروض
-        let currentBookText = "";  // نص الكتاب الحالي
+        let currentBookIdx = null;
+        let currentBookText = "";
+        let pdfDoc = null;
+        let currentPage = 1;
+        let totalPages = 1;
 
         function uploadBook() {
             const input = document.getElementById('book-upload');
@@ -169,13 +178,11 @@
                 alert("الرجاء رفع ملف PDF فقط.");
                 return;
             }
-            // قراءة الملف كبايتات
             const reader = new FileReader();
             reader.onload = function(e) {
                 const arrayBuffer = e.target.result;
                 books.push({name: file.name, file, arrayBuffer});
                 renderBooksList();
-                // فتح الكتاب تلقائياً بعد الرفع
                 openBook(books.length-1);
             };
             reader.readAsArrayBuffer(file);
@@ -201,13 +208,41 @@
         async function openBook(idx) {
             currentBookIdx = idx;
             const book = books[idx];
-            // عرض الكتاب داخل iframe باستخدام Blob URL
-            const blob = new Blob([book.arrayBuffer], {type: "application/pdf"});
-            const url = URL.createObjectURL(blob);
-            document.getElementById('pdf-viewer').src = url;
-            document.getElementById('pdf-viewer').style.display = 'block';
-            // استخراج نص الكتاب للذكاء الاصطناعي
-            extractPdfText(book.arrayBuffer);
+            // عرض الكتاب باستخدام PDF.js
+            document.getElementById('pdf-viewer-container').style.display = 'block';
+            try {
+                pdfDoc = await pdfjsLib.getDocument({data: book.arrayBuffer}).promise;
+                totalPages = pdfDoc.numPages;
+                currentPage = 1;
+                document.getElementById('total-pages').textContent = totalPages;
+                renderPage(currentPage);
+                extractPdfText(book.arrayBuffer);
+            } catch (e) {
+                alert("تعذر فتح ملف PDF.");
+            }
+        }
+
+        async function renderPage(pageNum) {
+            if (!pdfDoc) return;
+            const page = await pdfDoc.getPage(pageNum);
+            const viewport = page.getViewport({scale: 1.5});
+            const canvas = document.getElementById('pdf-canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            await page.render({canvasContext: context, viewport: viewport}).promise;
+            document.getElementById('current-page').textContent = pageNum;
+        }
+
+        function prevPage() {
+            if (currentPage <= 1) return;
+            currentPage--;
+            renderPage(currentPage);
+        }
+        function nextPage() {
+            if (!pdfDoc || currentPage >= totalPages) return;
+            currentPage++;
+            renderPage(currentPage);
         }
 
         // استخراج نص ملف PDF باستخدام PDF.js
@@ -216,7 +251,7 @@
             try {
                 const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
                 let text = "";
-                for (let i = 1; i <= Math.min(pdf.numPages, 15); i++) { // نكتفي بأول 15 صفحة للاختصار
+                for (let i = 1; i <= Math.min(pdf.numPages, 15); i++) {
                     const page = await pdf.getPage(i);
                     const content = await page.getTextContent();
                     const pageText = content.items.map(item => item.str).join(' ');
@@ -229,14 +264,12 @@
             }
         }
 
-        // توليد ملخص افتراضي (محلي) للكتاب
         function generateAIResults() {
             const aiDiv = document.getElementById('ai-results');
             if (!currentBookText.trim()) {
                 aiDiv.innerHTML = "<span style='color:#aaa;'>لم يتم استخراج نص الكتاب بعد.</span>";
                 return;
             }
-            // ملخص بسيط: أول 3 جمل من النص
             const sentences = currentBookText.replace(/\n/g, ' ').split(/[.!؟]/).filter(s => s.trim().length > 20);
             let summary = sentences.slice(0,3).join('. ') + ".";
             if (!summary.trim() || summary.length < 40) summary = "لم يتم العثور على ملخص مناسب.";
@@ -252,7 +285,6 @@
             `;
         }
 
-        // محاكاة ذكاء اصطناعي: الإجابة على سؤال المستخدم من نص الكتاب
         function askAI() {
             const question = document.getElementById('ai-question-input').value.trim();
             if (!question) {
@@ -263,10 +295,8 @@
                 alert("يرجى فتح كتاب أولاً.");
                 return;
             }
-            // محاكاة: البحث عن جملة قريبة من السؤال
             let answer = "";
             const sentences = currentBookText.split(/[.!؟]/).map(s => s.trim()).filter(s => s.length > 20);
-            // بحث بسيط: إذا تواجدت كلمة من السؤال في جملة من النص
             const qWords = question.split(' ');
             for (let s of sentences) {
                 for (let w of qWords) {
